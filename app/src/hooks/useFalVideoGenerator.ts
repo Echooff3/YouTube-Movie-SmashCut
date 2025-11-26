@@ -10,15 +10,6 @@ interface FalVideoResult {
   };
 }
 
-interface FalQueueStatus {
-  status: 'IN_QUEUE' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
-  request_id: string;
-  logs?: Array<{ message: string }>;
-  response_url?: string;
-}
-
-const FAL_API_URL = 'https://queue.fal.run/fal-ai/kling-video/v2.5-turbo/pro/text-to-video';
-
 export function useFalVideoGenerator() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,8 +37,10 @@ export function useFalVideoGenerator() {
     setRequestId(null);
 
     try {
-      // Submit the video generation request
-      const submitResponse = await fetch(FAL_API_URL, {
+      const modelId = 'fal-ai/kling-video/v2.5-turbo/pro/text-to-video';
+      
+      // 1. Submit request to queue
+      const submitResponse = await fetch(`https://queue.fal.run/${modelId}`, {
         method: 'POST',
         headers: {
           'Authorization': `Key ${apiKey}`,
@@ -55,7 +48,7 @@ export function useFalVideoGenerator() {
         },
         body: JSON.stringify({
           prompt,
-          duration: options?.duration || '5', // Default to 5 seconds to reduce cost
+          duration: options?.duration || '5',
           aspect_ratio: options?.aspectRatio || '16:9',
           negative_prompt: 'blur, distort, and low quality',
           cfg_scale: 0.5,
@@ -64,83 +57,93 @@ export function useFalVideoGenerator() {
 
       if (!submitResponse.ok) {
         const errorData = await submitResponse.json().catch(() => ({}));
-        if (submitResponse.status === 401) {
-          throw new Error('Invalid fal.ai API key');
-        }
-        throw new Error(errorData.detail || `Failed to submit video generation: ${submitResponse.statusText}`);
+        throw new Error(errorData.detail || `Submission failed: ${submitResponse.statusText}`);
       }
 
-      const submitData = await submitResponse.json();
-      const reqId = submitData.request_id;
-      setRequestId(reqId);
-      setProgress(prev => [...prev, 'Video generation request submitted...']);
+      const { request_id } = await submitResponse.json();
+      setRequestId(request_id);
+      setProgress(prev => [...prev, 'Request submitted to queue...']);
 
-      // Poll for completion
-      const statusUrl = `https://queue.fal.run/fal-ai/kling-video/v2.5-turbo/pro/text-to-video/requests/${reqId}/status`;
-      const resultUrl = `https://queue.fal.run/fal-ai/kling-video/v2.5-turbo/pro/text-to-video/requests/${reqId}`;
+      // 2. Poll for status
+      let isComplete = false;
+      let resultUrl = null;
 
-      let attempts = 0;
-      const maxAttempts = 120; // 10 minutes max (5 second intervals)
-
-      while (attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds between polls
-
-        const statusResponse = await fetch(statusUrl, {
-          headers: {
-            'Authorization': `Key ${apiKey}`,
-          },
-        });
+      while (!isComplete) {
+        const statusResponse = await fetch(
+          `https://queue.fal.run/${modelId}/requests/${request_id}/status?logs=1`,
+          {
+            headers: {
+              'Authorization': `Key ${apiKey}`,
+            },
+          }
+        );
 
         if (!statusResponse.ok) {
-          throw new Error('Failed to check video generation status');
+          throw new Error(`Status check failed: ${statusResponse.statusText}`);
         }
 
-        const statusData: FalQueueStatus = await statusResponse.json();
-
-        // Log progress
+        const statusData = await statusResponse.json();
+        
+        // Update logs
         if (statusData.logs) {
-          const newLogs = statusData.logs.map(log => log.message);
+          const newLogs = statusData.logs.map((l: any) => l.message);
           setProgress(prev => {
-            const existingLogs = new Set(prev);
-            const uniqueNewLogs = newLogs.filter(log => !existingLogs.has(log));
-            return [...prev, ...uniqueNewLogs];
+            const allMsgs = [...prev, ...newLogs];
+            return [...new Set(allMsgs)];
           });
         }
 
         if (statusData.status === 'COMPLETED') {
-          setProgress(prev => [...prev, 'Video generation complete!']);
+          isComplete = true;
+          // 3. Get result
+          const resultResponse = await fetch(
+            `https://queue.fal.run/${modelId}/requests/${request_id}`,
+            {
+              headers: {
+                'Authorization': `Key ${apiKey}`,
+              },
+            }
+          );
           
-          // Fetch the result
-          const resultResponse = await fetch(resultUrl, {
-            headers: {
-              'Authorization': `Key ${apiKey}`,
-            },
-          });
-
           if (!resultResponse.ok) {
-            throw new Error('Failed to fetch video result');
+            throw new Error('Failed to fetch result');
           }
 
-          const resultData: FalVideoResult = await resultResponse.json();
-          setVideoUrl(resultData.video.url);
-          setLoading(false);
-          return resultData.video.url;
+          const resultJson = await resultResponse.json();
+          const data = resultJson.response as FalVideoResult;
+          
+          if (data.video?.url) {
+            resultUrl = data.video.url;
+          }
+        } else if (statusData.status === 'IN_QUEUE') {
+          setProgress(prev => {
+            const msg = `Queue position: ${statusData.queue_position}`;
+            if (!prev.includes(msg)) return [...prev, msg];
+            return prev;
+          });
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } else if (statusData.status === 'IN_PROGRESS') {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } else {
+          // Handle other statuses like FAILED if they exist, or just break
+          throw new Error(`Request failed with status: ${statusData.status}`);
         }
-
-        if (statusData.status === 'FAILED') {
-          throw new Error('Video generation failed');
-        }
-
-        setProgress(prev => [...prev, `Processing... (${statusData.status})`]);
-        attempts++;
       }
 
-      throw new Error('Video generation timed out');
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to generate video';
+      if (resultUrl) {
+        setVideoUrl(resultUrl);
+        setProgress(prev => [...prev, 'Video generation complete!']);
+        return resultUrl;
+      } else {
+        throw new Error('No video URL in response');
+      }
+
+    } catch (err: any) {
+      const errorMessage = err.message || 'Failed to generate video';
       setError(errorMessage);
-      setLoading(false);
       return null;
+    } finally {
+      setLoading(false);
     }
   }, []);
 

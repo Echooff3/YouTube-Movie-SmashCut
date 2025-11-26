@@ -1,9 +1,13 @@
+import { useRef, useState, useEffect } from 'react';
+import YouTube, { type YouTubePlayer } from 'react-youtube';
 import type { AnalysisResult } from '../hooks/useOpenRouterChat';
+import type { YouTubeVideo } from '../types/youtube';
 
 interface AnalysisResultsProps {
   result: AnalysisResult;
   targetDuration: number;
   onRerun: () => void;
+  video?: YouTubeVideo | null;
 }
 
 interface RecommendedSegment {
@@ -24,8 +28,86 @@ interface VideoAnalysis {
   editing_notes?: string;
 }
 
-export function AnalysisResults({ result, targetDuration, onRerun }: AnalysisResultsProps) {
+export function AnalysisResults({ result, targetDuration, onRerun, video }: AnalysisResultsProps) {
   const analysis = result.parsedContent as VideoAnalysis | null;
+  const playerRef = useRef<YouTubePlayer | null>(null);
+  const [isAutoPlaying, setIsAutoPlaying] = useState(false);
+  const [currentSegmentIndex, setCurrentSegmentIndex] = useState<number>(-1);
+  const intervalRef = useRef<number | null>(null);
+
+  const parseTimestampToSeconds = (timestamp: string): number => {
+    const parts = timestamp.split(':').map(Number);
+    if (parts.length === 3) {
+      return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    }
+    if (parts.length === 2) {
+      return parts[0] * 60 + parts[1];
+    }
+    return 0;
+  };
+
+  useEffect(() => {
+    if (isAutoPlaying && playerRef.current && analysis?.recommended_segments) {
+      intervalRef.current = window.setInterval(async () => {
+        const currentTime = await playerRef.current.getCurrentTime();
+        const currentSegment = analysis.recommended_segments[currentSegmentIndex];
+        
+        if (currentSegment) {
+            const endTime = parseTimestampToSeconds(currentSegment.end_time);
+            
+            if (currentTime >= endTime) {
+                const nextIndex = currentSegmentIndex + 1;
+                if (nextIndex < analysis.recommended_segments.length) {
+                    setCurrentSegmentIndex(nextIndex);
+                    const nextSegment = analysis.recommended_segments[nextIndex];
+                    const startTime = parseTimestampToSeconds(nextSegment.start_time);
+                    playerRef.current.seekTo(startTime, true);
+                } else {
+                    setIsAutoPlaying(false);
+                    setCurrentSegmentIndex(-1);
+                    playerRef.current.pauseVideo();
+                }
+            }
+        }
+      }, 1000); // Check every second
+    }
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, [isAutoPlaying, currentSegmentIndex, analysis]);
+
+  const startAutoPlay = () => {
+    if (analysis?.recommended_segments?.length && playerRef.current) {
+        setIsAutoPlaying(true);
+        setCurrentSegmentIndex(0);
+        const startTime = parseTimestampToSeconds(analysis.recommended_segments[0].start_time);
+        playerRef.current.seekTo(startTime, true);
+        playerRef.current.playVideo();
+    }
+  };
+
+  const stopAutoPlay = () => {
+      setIsAutoPlaying(false);
+      setCurrentSegmentIndex(-1);
+      if (playerRef.current) {
+          playerRef.current.pauseVideo();
+      }
+  };
+
+  const handleJumpToSegment = (startTime: string) => {
+    if (playerRef.current) {
+      // If auto-playing, stop it when manually jumping
+      if (isAutoPlaying) {
+        stopAutoPlay();
+      }
+      const seconds = parseTimestampToSeconds(startTime);
+      playerRef.current.seekTo(seconds, true);
+      playerRef.current.playVideo();
+    }
+  };
   
   const getCategoryColor = (category: string): string => {
     const colors: Record<string, string> = {
@@ -75,6 +157,51 @@ export function AnalysisResults({ result, targetDuration, onRerun }: AnalysisRes
 
       {analysis ? (
         <div className="space-y-6">
+          {/* YouTube Player */}
+          {video && (
+            <div className="space-y-4">
+              <div className="aspect-video w-full rounded-lg overflow-hidden bg-black">
+                <YouTube
+                  videoId={video.id}
+                  className="w-full h-full"
+                  iframeClassName="w-full h-full"
+                  onReady={(event) => {
+                    playerRef.current = event.target;
+                  }}
+                  opts={{
+                    playerVars: {
+                      autoplay: 0,
+                    },
+                  }}
+                />
+              </div>
+              
+              <div className="flex justify-center">
+                {!isAutoPlaying ? (
+                  <button
+                    onClick={startAutoPlay}
+                    className="flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-500 text-white rounded-full font-semibold transition-all shadow-lg hover:shadow-green-500/20"
+                  >
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                    Play All Segments
+                  </button>
+                ) : (
+                  <button
+                    onClick={stopAutoPlay}
+                    className="flex items-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-500 text-white rounded-full font-semibold transition-all shadow-lg hover:shadow-red-500/20"
+                  >
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                    </svg>
+                    Stop Auto-Play
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Summary */}
           <div className="p-4 rounded-lg bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/30">
             <h3 className="text-white font-semibold mb-2 flex items-center gap-2">
@@ -141,12 +268,26 @@ export function AnalysisResults({ result, targetDuration, onRerun }: AnalysisRes
                 {analysis.recommended_segments.map((segment, index) => (
                   <div
                     key={index}
-                    className="p-4 rounded-lg bg-gray-900/50 border border-gray-700 hover:border-gray-600 transition-colors"
+                    className={`p-4 rounded-lg border transition-colors ${
+                      video ? 'cursor-pointer' : ''
+                    } ${
+                      currentSegmentIndex === index
+                        ? 'bg-green-500/10 border-green-500/50 ring-1 ring-green-500/30'
+                        : 'bg-gray-900/50 border-gray-700 hover:border-gray-600 hover:bg-gray-800/50'
+                    }`}
+                    onClick={() => video && handleJumpToSegment(segment.start_time)}
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
-                          <span className="text-orange-400 font-mono text-sm">
+                          <span className={`font-mono text-sm flex items-center gap-1 ${
+                            currentSegmentIndex === index ? 'text-green-400' : 'text-orange-400'
+                          }`}>
+                            {video && (
+                              <svg className={`w-3 h-3 ${currentSegmentIndex === index ? 'animate-pulse' : ''}`} fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z" />
+                              </svg>
+                            )}
                             {segment.start_time} → {segment.end_time}
                           </span>
                           <span className={`px-2 py-0.5 rounded text-xs font-medium border ${getCategoryColor(segment.category)}`}>

@@ -222,14 +222,15 @@ function App() {
               result={analysisResult}
               targetDuration={targetDuration}
               onRerun={handleAnalyze}
+              video={video}
             />
           </div>
         )}
 
         {/* Fal.ai Video Generator - Bonus Feature */}
-        <div className="mb-8">
+        {/* <div className="mb-8">
           <FalVideoGenerator analysisData={analysisData} />
-        </div>
+        </div> */}
 
         {/* Movie Script Database Info */}
         <div className="mt-8 rounded-xl border border-gray-700 bg-gray-800/50 p-6">
