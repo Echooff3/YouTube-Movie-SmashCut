@@ -1,8 +1,18 @@
+import { useState } from 'react'
 import { Settings } from './components/Settings'
 import { YouTubeAuth } from './components/YouTubeAuth'
 import { YouTubeUrlInput } from './components/YouTubeUrlInput'
+import { SrtUpload } from './components/SrtUpload'
+import { AnalysisConfig } from './components/AnalysisConfig'
+import { AnalysisResults } from './components/AnalysisResults'
+import { FalVideoGenerator } from './components/FalVideoGenerator'
+import { Disclaimer, DisclaimerBanner } from './components/Disclaimer'
 import { useYouTubeAuth } from './hooks/useYouTubeAuth'
 import { useYouTubeVideo } from './hooks/useYouTubeVideo'
+import { useSettings } from './hooks/useSettings'
+import { useSrtParser } from './hooks/useSrtParser'
+import { useOpenRouterChat } from './hooks/useOpenRouterChat'
+import { DEFAULT_SYSTEM_PROMPT, ANALYSIS_USER_PROMPT_TEMPLATE } from './config/prompts'
 
 function App() {
   const {
@@ -22,8 +32,82 @@ function App() {
     clearVideo,
   } = useYouTubeVideo(authState.accessToken);
 
+  const {
+    settings,
+    updateWebSearchEnabled,
+    updateStructuredOutputsEnabled,
+  } = useSettings();
+
+  const {
+    parsedSrt,
+    loading: srtLoading,
+    error: srtError,
+    parseFile,
+    clearSrt,
+    getTranscriptText,
+  } = useSrtParser();
+
+  const {
+    sendMessage,
+    loading: analysisLoading,
+    error: analysisError,
+    result: analysisResult,
+  } = useOpenRouterChat(settings);
+
+  // Local state for analysis configuration
+  const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
+  const [targetDuration, setTargetDuration] = useState(10);
+
+  // Check if we can run analysis
+  const canAnalyze = !!(
+    settings.apiKey &&
+    settings.selectedModel &&
+    parsedSrt
+  );
+
+  // Format duration for display
+  const formatVideoDuration = (): string => {
+    if (parsedSrt) {
+      const hours = Math.floor(parsedSrt.totalDuration / 3600);
+      const minutes = Math.floor((parsedSrt.totalDuration % 3600) / 60);
+      if (hours > 0) {
+        return `${hours}h ${minutes}m`;
+      }
+      return `${minutes}m`;
+    }
+    if (video) {
+      return video.duration;
+    }
+    return 'Unknown';
+  };
+
+  // Run the analysis
+  const handleAnalyze = async () => {
+    if (!canAnalyze) return;
+
+    const transcript = getTranscriptText();
+    
+    // Build the user prompt from template
+    const userPrompt = ANALYSIS_USER_PROMPT_TEMPLATE
+      .replace('{{videoTitle}}', video?.title || parsedSrt?.fileName || 'Unknown Video')
+      .replace('{{videoDuration}}', formatVideoDuration())
+      .replace('{{targetDuration}}', `${targetDuration} minutes`)
+      .replace('{{transcript}}', transcript);
+
+    await sendMessage(systemPrompt, userPrompt);
+  };
+
+  // Get analysis data for fal.ai video generator
+  const analysisData = analysisResult?.parsedContent as {
+    summary?: string;
+    themes?: string[];
+  } | null;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+      {/* Disclaimer Modal */}
+      <Disclaimer />
+
       {/* Header */}
       <header className="border-b border-gray-700 bg-gray-900/80 backdrop-blur-sm sticky top-0 z-40">
         <div className="max-w-4xl mx-auto px-4 py-4">
@@ -35,7 +119,7 @@ function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-white">SmashCut</h1>
-              <p className="text-xs text-gray-400">AI-Powered Video Condensation</p>
+              <p className="text-xs text-gray-400">AI-Powered Video Cliff Notes</p>
             </div>
           </div>
         </div>
@@ -46,19 +130,38 @@ function App() {
         {/* Hero Section */}
         <div className="text-center mb-12">
           <h2 className="text-3xl font-bold text-white mb-4">
-            Transform Long Videos into{' '}
+            Get the{' '}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">
-              10-Minute Summaries
+              Cliff Notes
             </span>
+            {' '}of Any Video
           </h2>
           <p className="text-gray-400 max-w-2xl mx-auto">
-            Use AI to intelligently condense 2-hour movies into engaging 10-minute highlights. 
-            Sign in with YouTube, enter a video URL, and let AI do the rest.
+            Upload a subtitle file (SRT) and let AI identify the essential moments. 
+            Transform a 2-hour movie into a {targetDuration}-minute summary with the key scenes, 
+            important dialogue, and pivotal moments preserved.
           </p>
         </div>
 
-        {/* YouTube Authentication */}
+        {/* SRT Upload - Primary Input */}
         <div className="mb-8">
+          <SrtUpload
+            parsedSrt={parsedSrt}
+            loading={srtLoading}
+            error={srtError}
+            onFileSelect={parseFile}
+            onClear={clearSrt}
+          />
+        </div>
+
+        {/* YouTube Section (Optional) */}
+        <div className="mb-8 space-y-4">
+          <div className="flex items-center gap-2 text-gray-500">
+            <div className="flex-1 h-px bg-gray-700" />
+            <span className="text-sm">Optional: Link to YouTube video</span>
+            <div className="flex-1 h-px bg-gray-700" />
+          </div>
+          
           <YouTubeAuth
             clientId={clientId}
             onClientIdChange={updateClientId}
@@ -70,22 +173,63 @@ function App() {
             onSignIn={signIn}
             onSignOut={signOut}
           />
-        </div>
 
-        {/* YouTube URL Input */}
-        <div className="mb-8">
-          <YouTubeUrlInput
-            isAuthenticated={authState.isAuthenticated}
-            video={video}
-            loading={videoLoading}
-            error={videoError}
-            onFetchVideo={fetchVideo}
-            onClearVideo={clearVideo}
-          />
+          {authState.isAuthenticated && (
+            <YouTubeUrlInput
+              isAuthenticated={authState.isAuthenticated}
+              video={video}
+              loading={videoLoading}
+              error={videoError}
+              onFetchVideo={fetchVideo}
+              onClearVideo={clearVideo}
+            />
+          )}
         </div>
 
         {/* Settings Section */}
-        <Settings />
+        <div className="mb-8">
+          <Settings />
+        </div>
+
+        {/* Analysis Configuration */}
+        <div className="mb-8">
+          <AnalysisConfig
+            systemPrompt={systemPrompt}
+            onSystemPromptChange={setSystemPrompt}
+            targetDuration={targetDuration}
+            onTargetDurationChange={setTargetDuration}
+            enableWebSearch={settings.enableWebSearch}
+            onWebSearchChange={updateWebSearchEnabled}
+            enableStructuredOutputs={settings.enableStructuredOutputs}
+            onStructuredOutputsChange={updateStructuredOutputsEnabled}
+            onAnalyze={handleAnalyze}
+            isAnalyzing={analysisLoading}
+            canAnalyze={canAnalyze}
+          />
+        </div>
+
+        {/* Analysis Error */}
+        {analysisError && (
+          <div className="mb-8 p-4 rounded-xl bg-red-500/10 border border-red-500/30">
+            <p className="text-red-400">{analysisError}</p>
+          </div>
+        )}
+
+        {/* Analysis Results */}
+        {analysisResult && (
+          <div className="mb-8">
+            <AnalysisResults
+              result={analysisResult}
+              targetDuration={targetDuration}
+              onRerun={handleAnalyze}
+            />
+          </div>
+        )}
+
+        {/* Fal.ai Video Generator - Bonus Feature */}
+        <div className="mb-8">
+          <FalVideoGenerator analysisData={analysisData} />
+        </div>
 
         {/* Movie Script Database Info */}
         <div className="mt-8 rounded-xl border border-gray-700 bg-gray-800/50 p-6">
@@ -123,12 +267,20 @@ function App() {
             </div>
           </div>
         </div>
+
+        {/* Disclaimer Banner */}
+        <div className="mt-8">
+          <DisclaimerBanner />
+        </div>
       </main>
 
       {/* Footer */}
       <footer className="border-t border-gray-700 mt-16">
         <div className="max-w-4xl mx-auto px-4 py-6 text-center text-sm text-gray-500">
-          <p>YouTube-Movie-SmashCut • AI-powered video condensation</p>
+          <p>YouTube-Movie-SmashCut • AI-powered video cliff notes</p>
+          <p className="mt-1 text-xs text-gray-600">
+            🔧 Hobbyist MVP - Not for production use
+          </p>
         </div>
       </footer>
     </div>
