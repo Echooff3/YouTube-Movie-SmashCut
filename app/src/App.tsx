@@ -5,7 +5,7 @@ import { YouTubeUrlInput } from './components/YouTubeUrlInput'
 import { SrtUpload } from './components/SrtUpload'
 import { AnalysisConfig } from './components/AnalysisConfig'
 import { AnalysisResults } from './components/AnalysisResults'
-import { FalVideoGenerator } from './components/FalVideoGenerator'
+// import { FalVideoGenerator } from './components/FalVideoGenerator'
 import { Disclaimer, DisclaimerBanner } from './components/Disclaimer'
 import { useYouTubeAuth } from './hooks/useYouTubeAuth'
 import { useYouTubeVideo } from './hooks/useYouTubeVideo'
@@ -98,10 +98,10 @@ function App() {
   };
 
   // Get analysis data for fal.ai video generator
-  const analysisData = analysisResult?.parsedContent as {
-    summary?: string;
-    themes?: string[];
-  } | null;
+  // const analysisData = analysisResult?.parsedContent as {
+  //   summary?: string;
+  //   themes?: string[];
+  // } | null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
