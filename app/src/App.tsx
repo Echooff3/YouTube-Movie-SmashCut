@@ -1,6 +1,27 @@
 import { Settings } from './components/Settings'
+import { YouTubeAuth } from './components/YouTubeAuth'
+import { YouTubeUrlInput } from './components/YouTubeUrlInput'
+import { useYouTubeAuth } from './hooks/useYouTubeAuth'
+import { useYouTubeVideo } from './hooks/useYouTubeVideo'
 
 function App() {
+  const {
+    authState,
+    clientId,
+    updateClientId,
+    signIn,
+    signOut,
+    isReady,
+  } = useYouTubeAuth();
+
+  const {
+    video,
+    loading: videoLoading,
+    error: videoError,
+    fetchVideo,
+    clearVideo,
+  } = useYouTubeVideo(authState.accessToken);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
       {/* Header */}
@@ -32,8 +53,35 @@ function App() {
           </h2>
           <p className="text-gray-400 max-w-2xl mx-auto">
             Use AI to intelligently condense 2-hour movies into engaging 10-minute highlights. 
-            Configure your OpenRouter API key and select your preferred AI model below.
+            Sign in with YouTube, enter a video URL, and let AI do the rest.
           </p>
+        </div>
+
+        {/* YouTube Authentication */}
+        <div className="mb-8">
+          <YouTubeAuth
+            clientId={clientId}
+            onClientIdChange={updateClientId}
+            isAuthenticated={authState.isAuthenticated}
+            user={authState.user}
+            loading={authState.loading}
+            error={authState.error}
+            isReady={isReady}
+            onSignIn={signIn}
+            onSignOut={signOut}
+          />
+        </div>
+
+        {/* YouTube URL Input */}
+        <div className="mb-8">
+          <YouTubeUrlInput
+            isAuthenticated={authState.isAuthenticated}
+            video={video}
+            loading={videoLoading}
+            error={videoError}
+            onFetchVideo={fetchVideo}
+            onClearVideo={clearVideo}
+          />
         </div>
 
         {/* Settings Section */}
