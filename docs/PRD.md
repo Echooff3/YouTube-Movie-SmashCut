@@ -155,8 +155,15 @@ The solution consists of two primary components:
 - Motion detection for action sequences
 - Face detection for dialogue scenes
 - Subtitle/caption extraction and analysis
+- Integration with Movie Script Database for transcript enhancement
 
-**1.3 AI-Powered Scene Selection**
+**1.3 Movie Script Database Integration**
+- Leverage [Movie-Script-Database](https://github.com/Aveek-Saha/Movie-Script-Database) for accurate transcripts
+- Access to thousands of movie scripts for enhanced analysis
+- Automatic script matching for popular movies
+- Fallback to audio transcription for unmatched content
+
+**1.4 AI-Powered Scene Selection**
 - Identify narrative-critical scenes
 - Detect emotional peaks (climactic moments)
 - Recognize transitional scenes
