@@ -31,16 +31,41 @@ export function FalVideoGenerator({ analysisData }: FalVideoGeneratorProps) {
     localStorage.setItem('fal-api-key', tempApiKey);
   };
 
-  // Generate prompt from analysis
+  // Generate a safe, descriptive prompt that avoids trademarked characters and IP
+  // Uses metaphors, stage directions, and descriptive language
   const generatePromptFromAnalysis = (): string => {
     if (!analysisData) {
-      return customPrompt || 'A cinematic scene from an epic movie, dramatic lighting, high quality cinematography';
+      return customPrompt || 'A cinematic scene unfolds: silhouettes against a golden horizon, figures in motion conveying determination. Dramatic orchestral lighting, sweeping camera movements, professional cinematography with rich color grading.';
     }
 
-    const themes = analysisData.themes?.slice(0, 3).join(', ') || 'drama';
-    const summary = analysisData.summary?.slice(0, 200) || '';
+    const themes = analysisData.themes?.slice(0, 3) || ['drama'];
     
-    return `A dramatic cinematic scene: ${summary}. Themes: ${themes}. High quality, professional cinematography, movie-like visuals, dramatic lighting.`;
+    // Convert themes to safe, descriptive visual language
+    const themeDescriptions: Record<string, string> = {
+      'action': 'dynamic movement, figures leaping through space, explosive energy',
+      'drama': 'intense close-ups, emotional exchanges between silhouetted figures',
+      'comedy': 'playful interactions, exaggerated gestures, warm lighting',
+      'horror': 'shadows creeping across walls, tension in every frame, unsettling angles',
+      'romance': 'soft focus, two figures drawing close, warm golden hour lighting',
+      'thriller': 'quick cuts, figures running through corridors, pulsing tension',
+      'adventure': 'vast landscapes, a lone figure against the horizon, epic scale',
+      'sci-fi': 'futuristic cityscapes, glowing interfaces, sleek technology',
+      'fantasy': 'mystical forests, ethereal lighting, magical atmospheres',
+      'mystery': 'shadowy figures, fog-laden streets, noir lighting',
+    };
+
+    const visualDescriptions = themes
+      .map(theme => themeDescriptions[theme.toLowerCase()] || `scenes evoking ${theme}`)
+      .join('; ');
+
+    // Create a safe, abstracted version of the summary using stage directions
+    const safePrompt = `A cinematic montage unfolds: ${visualDescriptions}. 
+The camera sweeps through carefully composed frames, each shot telling part of an emotional journey. 
+Figures move with purpose - their silhouettes conveying universal human experiences. 
+Professional cinematography with dramatic lighting, rich color grading, and sweeping orchestral mood. 
+No specific characters or logos - only the essence of storytelling through pure visual language.`;
+
+    return safePrompt.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
   };
 
   // Handle video generation
@@ -307,8 +332,9 @@ export function FalVideoGenerator({ analysisData }: FalVideoGeneratorProps) {
         {/* Info Note */}
         <div className="p-3 rounded-lg bg-gray-900/50 border border-gray-700">
           <p className="text-xs text-gray-400">
-            <strong className="text-gray-300">💡 Tip:</strong> This generates an AI video based on your video's themes and summary. 
-            It's a fun way to create a teaser or visual representation of your content!
+            <strong className="text-gray-300">💡 Tip:</strong> This generates an original AI video inspired by your video's themes and mood. 
+            The auto-generated prompts use descriptive language, metaphors, and stage directions to create unique visuals 
+            without referencing any trademarked characters or copyrighted content.
           </p>
         </div>
       </div>
